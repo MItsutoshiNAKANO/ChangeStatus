@@ -127,6 +127,10 @@
           echo yes | cpan -T
           CGI::Application CGI::Application::Plugin::Authentication
           CGI::Application::Plugin::Session CGI::Session TOML::Tiny
+    - name: Stop PostgreSQL Server
+      ansible.builtin.systemd:
+        name: postgresql
+        state: stopped
     - name: Remove if PostgreSQL database directory exists
       ansible.builtin.file:
         path: /var/lib/pgsql/data
