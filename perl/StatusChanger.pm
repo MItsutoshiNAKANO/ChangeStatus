@@ -36,9 +36,41 @@ use constant PARAMS => {
     reporter => 'VARCHAR(126)',
     address => 'VARCHAR(126)',
     status => 'VARCHAR(126)',
-    description => 'VARCHAR(10485760)',
-    updater => 'VARCHAR(126)'
+    description => 'VARCHAR(10485760)'
 };
+
+=head2 EXIST # Query to exist.
+
+=cut
+
+use constant EXIST => 'SELECT id FROM tickets WHERE id = ?';
+
+=head2 INSERT # Insert statement.
+
+=cut
+
+use constant INSERT => <<'_END_OF_INSERT_';
+INSERT INTO tickets (
+        id, subject, reporter, address, status, description, creator, updater
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+_END_OF_INSERT_
+
+=head2 UPDATE # Update statement.
+
+=cut
+
+use constant UPDATE => <<'_END_OF_UPDATE_';
+UPDATE tickets
+    SET
+        subject = COALESCE(?, subject),
+        reporter = COALESCE(?, reporter),
+        address = COALESCE(?, address),
+        status = COALESCE(?, status),
+        description = COALESCE(?, description),
+        updater = COALESCE(?, updater),
+        update_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+_END_OF_UPDATE_
 
 =head2 RESULT # Results.
 
@@ -47,28 +79,17 @@ use constant PARAMS => {
 use constant RESULT => {
     OK => { status => 200, code => 200000000, message => 'OK' },
     PARAMETER_ERROR => {
-        status => 400, code => 400000000, message => 'Parameter Error'
-    },
-    NOT_FOUND => {
-        status => 404, code => 404000000, message => 'Not Found'
+        status => 400, code => 400000000, message => 'Parameter error'
     },
     DB_ERROR => {
-        status => 500, code => 500000000, message => 'Database Error'
+        status => 500, code => 500000000, message => 'Database error'
     },
     DB_CONNECTION_ERROR => {
         status => 500, code => 500000001,
-        message => 'Database Connection Error'
-    },
-    DB_NOT_PREPARED => {
-        status => 500, code => 500000002,
-        message => 'Database Statement Not Prepared'
-    },
-    DB_NOT_EXECUTED => {
-        status => 500, code => 500000003,
-        message => 'Database Statement Not Executed'
+        message => 'Database connection error'
     },
     NOT_IMPLEMENTED_YET => {
-        status => 500, code => 500999999, message => 'Not Implemented'
+        status => 500, code => 500999999, message => 'Not implemented yet'
     }
 };
 
@@ -100,7 +121,7 @@ sub _db_error($) {
 
 =head1 METHODS
 
-=head2 $self->_ng($result); # Return the result as NG.
+=head2 $self->_ng($result); # Exit as NG.
 
 =head3 See Also
 
@@ -132,7 +153,16 @@ sub _ng($$) {
     exit(69);
 }
 
-=head2 $self->_ok($result); # Return the result as OK.
+=head2 $self->_parameter_error(); # Exit as parameter error.
+
+=cut
+
+sub _parameter_error($) {
+    my $self = shift;
+    $self->_ng(RESULT->{PARAMETER_ERROR});
+}
+
+=head2 $self->_ok($result); # Exit as OK.
 
 =cut
 
@@ -154,6 +184,76 @@ sub _ok($$) {
     exit(0);
 }
 
+=head2 $self->_validate(); # Validate the parameters.
+
+=cut
+
+sub _validate($) {
+    my $self = shift;
+    my $params = $self->{_cgi}->Vars or $self->_parameter_error();
+    %$params or $self->_parameter_error();
+    for my $key (keys %$params) {
+        my $type = PARAMS->{$key} or $self->_parameter_error();
+        my $value = $params->{$key};
+        if ($type eq 'INTEGER') {
+            $value =~ m/^\d+$/ or $self->_parameter_error();
+        } elsif ($type =~ m{^VARCHAR\((\d+)\)$}) {
+            length($value) <= $1 or $self->_parameter_error();
+        } else { $self->_parameter_error() }
+    }
+    $self->{_params} = $params;
+}
+
+=head2 $self->_transact(); # Transact DB.
+
+=cut
+
+sub _transact($) {
+    my $self = shift;
+    $self->{_dbh}->{AutoCommit} = 0;
+    $self->{_dbh}->{RaiseError} = 1;
+    my $phase;
+    my $sth;
+    eval {
+        $phase = 1;
+        $sth = $self->{_dbh}->prepare(EXIST);
+        $phase = 2;
+        $sth->execute($self->{_params}->{id});
+        $phase = 3;
+        my $params = $self->{_params};
+        $phase = 4;
+        if ($sth->fetch) {
+            $phase = 5;
+            $self->{_dbh}->do(
+                UPDATE, undef, $params->{subject}, $params->{reporter},
+                $params->{address}, $params->{status}, $params->{description},
+                $params->{id}, $self->{_user}
+            );
+        } else {
+            $phase = 6;
+            unless (
+                $params->{subject} && $params->{reporter}
+                && $params->{address} && $params->{status}
+                && $params->{description}
+            ) { $self->_ng(RESULT->{PARAMETER_ERROR}) }
+            $self->{_dbh}->do(
+                INSERT, undef, $params->{id}, $params->{subject},
+                $params->{reporter}, $params->{address}, $params->{status}, 
+                $params->{description}, $self->{_user}, $self->{_user}
+            );
+        }
+        $phase = 7;
+        $self->{_dbh}->commit;
+        $phase = 8;
+    };
+    if ($@) {
+        my $h = ($phase >= 2 && $phase <= 4) ? $sth : $self->{_dbh};
+        $self->{_log}->error('Database error', $phase, $@, db_error($h));
+        $self->_ng(RESULT->{DB_ERROR});
+    }
+    $self->_ok(RESULT->{OK});
+}
+
 =head2 $changer->change(); # Change the tickets status.
 
 =cut
@@ -165,8 +265,11 @@ sub change($$) {
         path => '../logs/StatusChanger.log', level => 'info'
     );
     unless ($self->{_log}) { die 'Log is not defined', $! }
-    $self->{_cgi} = $opts->{cgi} || CGI->new;
     $self->{_log}->info('begin change()');
+    $self->{_cgi} = $opts->{cgi} || CGI->new;
+    $self->_validate();
+    $self->{_user} = $opts->{user} || $ENV{LOGNAME} || $ENV{USER}
+    || getpwuid($<) || getlogin || $ENV{USERNAME} || $<;
     $self->{_dbh} = $opts->{dbh} || DBI->connect(
         'dbi:Pg:dbname=' . $ENV{PGDATABASE}
     );
@@ -176,10 +279,7 @@ sub change($$) {
         );
         $self->_ng(RESULT->{DB_CONNECTION_ERROR});
     }
-    # TODO: Implement the response
-    $self->_ng(RESULT->{NOT_IMPLEMENTED_YET});
-
-    $self->_ok(RESULT->{OK});
+    $self->_transact();
 }
 
 1;
