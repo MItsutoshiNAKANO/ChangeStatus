@@ -95,7 +95,7 @@ use constant RESULT => {
 
 =head1 CONSTRUCTOR
 
-=head2 $changer = StatusChanger->new(); Create new Changer.
+=head2 $changer = StatusChanger->new(); # Create new Changer.
 
 =cut
 
