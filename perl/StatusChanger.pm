@@ -5,6 +5,7 @@ use warnings;
 use utf8;
 use DBI;
 use CGI;
+use StatusChanger::Response;
 
 =encoding utf8
 
@@ -71,27 +72,6 @@ UPDATE tickets
     WHERE id = ?
 _END_OF_UPDATE_
 
-=head2 RESULT # Results.
-
-=cut
-
-use constant RESULT => {
-    OK => { status => 200, code => 200000000, message => 'OK' },
-    PARAMETER_ERROR => {
-        status => 400, code => 400000000, message => 'Parameter error'
-    },
-    DB_ERROR => {
-        status => 500, code => 500000000, message => 'Database error'
-    },
-    DB_CONNECTION_ERROR => {
-        status => 500, code => 500000001,
-        message => 'Database connection error'
-    },
-    NOT_IMPLEMENTED_YET => {
-        status => 500, code => 500999999, message => 'Not implemented yet'
-    }
-};
-
 =head1 CONSTRUCTOR
 
 =head2 $changer = StatusChanger->new(); # Create new Changer.
@@ -120,47 +100,6 @@ sub _db_error($) {
 
 =head1 METHODS
 
-=head2 $changer->_respond($result); # Respond to the client.
-
-=cut
-
-sub _respond($$) {
-    my $self = shift;
-    my $result = shift;
-    say(
-        $self->{_cgi}->header(
-            -status => $result->{status},
-            -type => 'text/plain', -charset => 'us-ascii'
-        ), $result->{code}
-    ) or die 'Failed to respond';
-    return 1;
-}
-
-=head2 $self->_ng($result); # Return NG.
-
-=cut
-
-sub _ng($$) {
-    my $self = shift;
-    my $result = shift;
-    my $r = $result;
-    $self->{log}->error($r->{status}, $r->{code}, $r->{message});
-    $self->_respond($result);
-    return undef;
-}
-
-=head2 $self->_ok($result); # Return OK.
-
-=cut
-
-sub _ok($$) {
-    my $self = shift;
-    my $result = shift;
-    my $r = $result;
-    $self->{log}->info($r->{status}, $r->{code}, $r->{message});
-    return $self->_respond($result);
-}
-
 =head2 $params_or_undef = $self->_validate();
 
 Validate the parameters.
@@ -169,7 +108,7 @@ Validate the parameters.
 
 sub _validate($) {
     my $self = shift;
-    my $params = $self->{_cgi}->Vars or return undef;
+    my $params = $self->{cgi}->Vars or return undef;
     %$params or return undef;
     for my $key (keys %$params) {
         my $type = PARAMS->{$key} or return undef;
@@ -191,20 +130,21 @@ Prepare to the changer's options.
 sub prepare($$) {
     my $self = shift;
     my $opts = shift;
-    $self->{log} = $opts->{log};
-    $self->{log}->info('prepare()');
-    $self->{_cgi} = $opts->{cgi} || CGI->new;
-    $self->_validate() or return $self->_ng(RESULT->{PARAMETER_ERROR});
+    my $log = $self->{log} = $opts->{log};
+    $log->info('prepare()');
+    $self->{cgi} = $opts->{cgi} || CGI->new;
+    $self->{resp} = StatusChanger::Response->new->prepare($self);
+    $self->_validate() or return $self->{resp}->parameter_error;
     $self->{_user} = $opts->{user} || $ENV{LOGNAME} || $ENV{USER}
     || getpwuid($<) || getlogin || $ENV{USERNAME} || $<;
     $self->{_dbh} = $opts->{dbh} || DBI->connect(
         'dbi:Pg:dbname=' . $ENV{PGDATABASE}
     );
     unless ($self->{_dbh}) {
-        $self->{log}->error(
+        $log->error(
             'Database connection error', _db_error(qw(DBI)), $!
         );
-        return $self->_ng(RESULT->{DB_CONNECTION_ERROR});
+        return $self->{resp}->db_connection_error;
     }
     return $self;
 }
@@ -218,48 +158,45 @@ sub change($) {
     $self->{log}->info('change()');
     $self->{_dbh}->{AutoCommit} = 0;
     $self->{_dbh}->{RaiseError} = 1;
+    my $p = $self->{_params};
+    $self->{log}->info('Parameters', %$p);
     my $phase;
     my $sth;
     eval {
         $phase = 1;
         $sth = $self->{_dbh}->prepare(EXIST);
         $phase = 2;
-        $sth->execute($self->{_params}->{id});
+        $sth->execute($p->{id});
         $phase = 3;
-        my $params = $self->{_params};
-        $phase = 4;
         if ($sth->fetch) {
-            $phase = 5;
+            $phase = 4;
             $self->{_dbh}->do(
-                UPDATE, undef, $params->{subject}, $params->{reporter},
-                $params->{address}, $params->{status}, $params->{description},
-                $self->{_user}, $params->{id}
+                UPDATE, undef, $p->{subject}, $p->{reporter}, $p->{address},
+                $p->{status}, $p->{description}, $self->{_user}, $p->{id}
             );
         } else {
-            $phase = 6;
+            $phase = 5;
             unless (
-                $params->{subject} && $params->{reporter}
-                && $params->{address} && $params->{status}
-                && $params->{description}
-            ) { return $self->_ng(RESULT->{PARAMETER_ERROR}) }
+                $p->{subject} && $p->{reporter} && $p->{address}
+                && $p->{status} && $p->{description}
+            ) { return $self->{resp}->parameter_error }
             $self->{_dbh}->do(
-                INSERT, undef, $params->{id}, $params->{subject},
-                $params->{reporter}, $params->{address}, $params->{status},
-                $params->{description}, $self->{_user}, $self->{_user}
+                INSERT, undef, $p->{id}, $p->{subject}, $p->{reporter},
+                $p->{address}, $p->{status}, $p->{description},
+                $self->{_user}, $self->{_user}
             );
         }
-        $phase = 7;
+        $phase = 6;
         $self->{_dbh}->commit;
-        $phase = 8;
+        $phase = 7;
     };
     if ($@) {
-        my $h = ($phase >= 2 && $phase <= 4) ? $sth : $self->{_dbh};
+        my $h = ($phase >= 2 && $phase <= 3) ? $sth : $self->{_dbh};
         $self->{log}->error('Database error', $phase, db_error($h), $@);
-        return $self->_ng(RESULT->{DB_ERROR});
+        return $self->{resp}->db_error;
     }
-    return $self->_ok(RESULT->{OK});
+    return $self->{resp}->ok;
 }
 
 1;
-
 __END__
