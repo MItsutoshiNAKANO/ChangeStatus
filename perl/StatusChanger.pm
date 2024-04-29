@@ -3,9 +3,8 @@ use v5.32.1;
 use strict;
 use warnings;
 use utf8;
-use CGI;
 use DBI;
-use Mojo::Log;
+use CGI;
 
 =encoding utf8
 
@@ -16,8 +15,9 @@ StatusChanger.pm - Change the status.
 =head1 SYNOPSIS
 
     use StatusChanger;
-
-    StatusChanger->new->prepare($opts)->change;
+    my $changer = StatusChanger->new;
+    $changer->prepare($opts);
+    $changer->change;
 
 =head1 DESCRIPTION
 
@@ -120,113 +120,91 @@ sub _db_error($) {
 
 =head1 METHODS
 
-=head2 $self->_ng($result); # Exit as NG.
+=head2 $changer->_respond($result); # Respond to the client.
 
-=head3 See Also
+=cut
 
-=over 4
+sub _respond($$) {
+    my $self = shift;
+    my $result = shift;
+    say(
+        $self->{_cgi}->header(
+            -status => $result->{status},
+            -type => 'text/plain', -charset => 'us-ascii'
+        ), $result->{code}
+    ) or die 'Failed to respond';
+    return 1;
+}
 
-=item 1. @see https://man.freebsd.org/cgi/man.cgi?query=sysexits
-
-=item 2. @see https://nxmnpg.lemoda.net/ja/3/sysexits
-
-=back
+=head2 $self->_ng($result); # Return NG.
 
 =cut
 
 sub _ng($$) {
     my $self = shift;
     my $result = shift;
-    $self->{_log}->error(
-        $result->{status}, $result->{code}, $result->{message}
-    );
-    say(
-        $self->{_cgi}->header(
-            -status => $result->{status},
-            -type => 'text/plain', -charset => 'us-ascii'
-        ), $result->{code}
-    ) or do {
-        $self->{_log}->error('Failed to respond, because', $!);
-        exit(74);
-    };
-    exit(69);
+    my $r = $result;
+    $self->{log}->error($r->{status}, $r->{code}, $r->{message});
+    $self->_respond($result);
+    return undef;
 }
 
-=head2 $self->_parameter_error(); # Exit as parameter error.
-
-=cut
-
-sub _parameter_error($) {
-    my $self = shift;
-    $self->_ng(RESULT->{PARAMETER_ERROR});
-}
-
-=head2 $self->_ok($result); # Exit as OK.
+=head2 $self->_ok($result); # Return OK.
 
 =cut
 
 sub _ok($$) {
     my $self = shift;
     my $result = shift;
-    $self->{_log}->info(
-        $result->{status}, $result->{code}, $result->{message}
-    );
-    say(
-        $self->{_cgi}->header(
-            -status => $result->{status},
-            -type => 'text/plain', -charset => 'us-ascii'
-        ), $result->{code}
-    ) or do {
-        $self->{_log}->error('Failed to respond, because', $!);
-        exit(74);
-    };
-    exit(0);
+    my $r = $result;
+    $self->{log}->info($r->{status}, $r->{code}, $r->{message});
+    return $self->_respond($result);
 }
 
-=head2 $self->_validate(); # Validate the parameters.
+=head2 $params_or_undef = $self->_validate();
+
+Validate the parameters.
 
 =cut
 
 sub _validate($) {
     my $self = shift;
-    my $params = $self->{_cgi}->Vars or $self->_parameter_error();
-    %$params or $self->_parameter_error();
+    my $params = $self->{_cgi}->Vars or return undef;
+    %$params or return undef;
     for my $key (keys %$params) {
-        my $type = PARAMS->{$key} or $self->_parameter_error();
+        my $type = PARAMS->{$key} or return undef;
         my $value = $params->{$key};
-        if ($type eq 'INTEGER') {
-            $value =~ m/^\d+$/ or $self->_parameter_error();
-        } elsif ($type =~ m{^VARCHAR\((\d+)\)$}) {
-            length($value) <= $1 or $self->_parameter_error();
-        } else { $self->_parameter_error() }
+        if ($type eq 'INTEGER') { $value =~ m/^\d+$/ or return undef }
+        elsif (my ($length) = $type =~ m{^VARCHAR\((\d+)\)$}) {
+            length($value) <= $length or return undef;
+        } else { die "Invalid type $type, $key " }
     }
-    $self->{_params} = $params;
+    return $self->{_params} = $params;
 }
 
-=head2 $changer->prepare($opts); # Prepare to the changer's options.
+=head2 $chager_or_undef = $changer->prepare($opts);
+
+Prepare to the changer's options.
 
 =cut
 
 sub prepare($$) {
     my $self = shift;
     my $opts = shift;
-    $self->{_log} = $opts->{log} || Mojo::Log->new(
-        path => '../logs/StatusChanger.log', level => 'info'
-    );
-    unless ($self->{_log}) { die 'Log is not defined', $! }
-    $self->{_log}->info('begin change()');
+    $self->{log} = $opts->{log};
+    $self->{log}->info('prepare()');
     $self->{_cgi} = $opts->{cgi} || CGI->new;
-    $self->_validate();
+    $self->_validate() or return $self->_ng(RESULT->{PARAMETER_ERROR});
     $self->{_user} = $opts->{user} || $ENV{LOGNAME} || $ENV{USER}
     || getpwuid($<) || getlogin || $ENV{USERNAME} || $<;
     $self->{_dbh} = $opts->{dbh} || DBI->connect(
         'dbi:Pg:dbname=' . $ENV{PGDATABASE}
     );
     unless ($self->{_dbh}) {
-        $self->{_log}->error(
-            'Database connection error', db_error(qw(DBI)), $!
+        $self->{log}->error(
+            'Database connection error', _db_error(qw(DBI)), $!
         );
-        $self->_ng(RESULT->{DB_CONNECTION_ERROR});
+        return $self->_ng(RESULT->{DB_CONNECTION_ERROR});
     }
     return $self;
 }
@@ -237,6 +215,7 @@ sub prepare($$) {
 
 sub change($) {
     my $self = shift;
+    $self->{log}->info('change()');
     $self->{_dbh}->{AutoCommit} = 0;
     $self->{_dbh}->{RaiseError} = 1;
     my $phase;
@@ -262,7 +241,7 @@ sub change($) {
                 $params->{subject} && $params->{reporter}
                 && $params->{address} && $params->{status}
                 && $params->{description}
-            ) { $self->_ng(RESULT->{PARAMETER_ERROR}) }
+            ) { return $self->_ng(RESULT->{PARAMETER_ERROR}) }
             $self->{_dbh}->do(
                 INSERT, undef, $params->{id}, $params->{subject},
                 $params->{reporter}, $params->{address}, $params->{status},
@@ -275,10 +254,10 @@ sub change($) {
     };
     if ($@) {
         my $h = ($phase >= 2 && $phase <= 4) ? $sth : $self->{_dbh};
-        $self->{_log}->error('Database error', $phase, $@, db_error($h));
-        $self->_ng(RESULT->{DB_ERROR});
+        $self->{log}->error('Database error', $phase, db_error($h), $@);
+        return $self->_ng(RESULT->{DB_ERROR});
     }
-    $self->_ok(RESULT->{OK});
+    return $self->_ok(RESULT->{OK});
 }
 
 1;

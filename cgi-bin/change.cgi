@@ -4,12 +4,18 @@ use v5.32.1;
 use strict;
 use warnings;
 use utf8;
+use Mojo::Log;
 use lib '../perl';
 use StatusChanger;
 
+
 $ENV{PGDATABASE} ||= 'vagrant';
 $ENV{PGPASSWORD} ||= 'vagrant';
-StatusChanger->new->prepare()->change;
+
+my $log = Mojo::Log->new(path => '../logs/change.log', level => 'info')
+or die 'Could not create log file';
+my $changer = StatusChanger->new;
+$changer->prepare({ log => $log }) and $changer->change;
 
 __END__
 
