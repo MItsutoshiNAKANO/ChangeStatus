@@ -24,7 +24,7 @@ use CGI;
 use DBI;
 use Mojo::Log;
 
-=head1 CONSTANTS 
+=head1 CONSTANTS
 
 =head2 PARAMS # CGI parameters.
 
@@ -227,7 +227,7 @@ sub _transact($) {
             $self->{_dbh}->do(
                 UPDATE, undef, $params->{subject}, $params->{reporter},
                 $params->{address}, $params->{status}, $params->{description},
-                $params->{id}, $self->{_user}
+                $self->{_user}, $params->{id}
             );
         } else {
             $phase = 6;
@@ -238,7 +238,7 @@ sub _transact($) {
             ) { $self->_ng(RESULT->{PARAMETER_ERROR}) }
             $self->{_dbh}->do(
                 INSERT, undef, $params->{id}, $params->{subject},
-                $params->{reporter}, $params->{address}, $params->{status}, 
+                $params->{reporter}, $params->{address}, $params->{status},
                 $params->{description}, $self->{_user}, $self->{_user}
             );
         }
