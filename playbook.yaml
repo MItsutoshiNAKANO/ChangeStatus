@@ -162,6 +162,11 @@
       ansible.posix.selinux:
         policy: targeted
         state: permissive
+    - name: Change EnableSendfile to off in Apache HTTPD Server configuration
+      ansible.builtin.replace:
+        path: /etc/httpd/conf/httpd.conf
+        regexp: 'EnableSendfile on'
+        replace: 'EnableSendfile off'
     - name: Start and enable Apache HTTPD Server
       ansible.builtin.systemd:
         name: httpd
