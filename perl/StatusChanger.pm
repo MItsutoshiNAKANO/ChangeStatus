@@ -7,7 +7,8 @@ StatusChanger.pm - Change the status.
 =head1 SYNOPSIS
 
     use StatusChanger;
-    StatusChanger->new()->change();
+
+    StatusChanger->new->prepare($opts)->change;
 
 =head1 DESCRIPTION
 
@@ -204,11 +205,39 @@ sub _validate($) {
     $self->{_params} = $params;
 }
 
-=head2 $self->_transact(); # Transact DB.
+=head2 $changer->prepare($opts); # Prepare to the changer's options.
 
 =cut
 
-sub _transact($) {
+sub prepare($$) {
+    my $self = shift;
+    my $opts = shift;
+    $self->{_log} = $opts->{log} || Mojo::Log->new(
+        path => '../logs/StatusChanger.log', level => 'info'
+    );
+    unless ($self->{_log}) { die 'Log is not defined', $! }
+    $self->{_log}->info('begin change()');
+    $self->{_cgi} = $opts->{cgi} || CGI->new;
+    $self->_validate();
+    $self->{_user} = $opts->{user} || $ENV{LOGNAME} || $ENV{USER}
+    || getpwuid($<) || getlogin || $ENV{USERNAME} || $<;
+    $self->{_dbh} = $opts->{dbh} || DBI->connect(
+        'dbi:Pg:dbname=' . $ENV{PGDATABASE}
+    );
+    unless ($self->{_dbh}) {
+        $self->{_log}->error(
+            'Database connection error', db_error(qw(DBI)), $!
+        );
+        $self->_ng(RESULT->{DB_CONNECTION_ERROR});
+    }
+    return $self;
+}
+
+=head2 $changer->change(); # Change the tickets status.
+
+=cut
+
+sub change($) {
     my $self = shift;
     $self->{_dbh}->{AutoCommit} = 0;
     $self->{_dbh}->{RaiseError} = 1;
@@ -252,34 +281,6 @@ sub _transact($) {
         $self->_ng(RESULT->{DB_ERROR});
     }
     $self->_ok(RESULT->{OK});
-}
-
-=head2 $changer->change(); # Change the tickets status.
-
-=cut
-
-sub change($$) {
-    my $self = shift;
-    my $opts = shift;
-    $self->{_log} = $opts->{log} || Mojo::Log->new(
-        path => '../logs/StatusChanger.log', level => 'info'
-    );
-    unless ($self->{_log}) { die 'Log is not defined', $! }
-    $self->{_log}->info('begin change()');
-    $self->{_cgi} = $opts->{cgi} || CGI->new;
-    $self->_validate();
-    $self->{_user} = $opts->{user} || $ENV{LOGNAME} || $ENV{USER}
-    || getpwuid($<) || getlogin || $ENV{USERNAME} || $<;
-    $self->{_dbh} = $opts->{dbh} || DBI->connect(
-        'dbi:Pg:dbname=' . $ENV{PGDATABASE}
-    );
-    unless ($self->{_dbh}) {
-        $self->{_log}->error(
-            'Database connection error', db_error(qw(DBI)), $!
-        );
-        $self->_ng(RESULT->{DB_CONNECTION_ERROR});
-    }
-    $self->_transact();
 }
 
 1;

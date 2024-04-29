@@ -9,7 +9,7 @@ use StatusChanger;
 
 $ENV{PGDATABASE} ||= 'vagrant';
 $ENV{PGPASSWORD} ||= 'vagrant';
-StatusChanger->new()->change();
+StatusChanger->new->prepare()->change;
 
 __END__
 
