@@ -1,3 +1,12 @@
+package StatusChanger;
+use v5.32.1;
+use strict;
+use warnings;
+use utf8;
+use CGI;
+use DBI;
+use Mojo::Log;
+
 =encoding utf8
 
 =head1 NAME
@@ -13,17 +22,6 @@ StatusChanger.pm - Change the status.
 =head1 DESCRIPTION
 
 This class changes the ticket status.
-
-=cut
-
-package StatusChanger;
-use v5.32.1;
-use strict;
-use warnings;
-use utf8;
-use CGI;
-use DBI;
-use Mojo::Log;
 
 =head1 CONSTANTS
 
