@@ -121,6 +121,27 @@ sub _validate($) {
     return $self->{_params} = $params;
 }
 
+=head2 $self->wrap($dbh);
+
+=cut
+
+sub wrap($$) {
+    my $self = shift;
+    my $dbh = shift;
+    my $orig_do = \&{$dbh->do};
+    $dbh->{orig_do} = $orig_do;
+    sub do ($$$@) {
+        my $self = shift;
+        my $sql = shift;
+        my $attrs = shift;
+        my @params = shift;
+        $self->{log}->info('do()', $sql, $attrs, @params);
+        return $self->{orig_do}->($self, $sql, $attrs, @params);
+    }
+    $dbh->do = \&do;
+    return $self;
+}
+
 =head2 $chager_or_undef = $changer->prepare($opts);
 
 Prepare to the changer's options.
@@ -146,6 +167,7 @@ sub prepare($$) {
         );
         return $self->{resp}->db_connection_error;
     }
+    $self->wrap($self->{_dbh});
     return $self;
 }
 
@@ -196,6 +218,50 @@ sub change($) {
         return $self->{resp}->db_error;
     }
     return $self->{resp}->ok;
+}
+
+=head2 $changer->repeat({ log => $log }); # Repeat updating.
+
+=cut
+
+sub repeat($$) {
+    my $self = shift;
+    my $opts = shift;
+    my $log = $self->{log} = $opts->{log};
+    $log->info('repeat()');
+    $self->{_dbh} = DBI->connect('dbi:Pg:dbname=' . $ENV{PGDATABASE});
+    unless ($self->{_dbh}) {
+        my @mesg = ('Database connection error', _db_error(qw(DBI)));
+        $log->error(@mesg);
+        die "@mesg";
+    }
+    $self->{_dbh}->{AutoCommit} = 0;
+    $self->{_dbh}->{RaiseError} = 1;
+    my $arg;
+    my @args = (
+        [
+            UPDATE, undef, 'subject1', 'reporter1', 'address1', 'status1',
+            'description1', 'updater1', 1
+        ], [
+            UPDATE, undef, 'subject2', 'reporter2', 'address2', 'status2',
+            'description2', 'updater2', 1
+        ], [
+            UPDATE, undef, 'subject3', 'reporter3', 'address3', 'status3',
+            'description3', 'updater3', 1
+        ]
+    );
+    eval {
+        foreach $arg (@args) { $self->{_dbh}->do(@$arg) }
+        $self->{_dbh}->commit;
+        $self->{_dbh}->disconnect;
+    };
+    if ($@) {
+        my @mesg = ('Database error', _db_error($self->{_dbh}), $@);
+        $log->error(@mesg);
+        $self->{_dbh}->rollback;
+        $self->{_dbh}->disconnect;
+        die "@mesg";
+    }
 }
 
 1;
