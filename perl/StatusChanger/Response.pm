@@ -26,19 +26,19 @@ StatusChanger::Response - Response to the StatusChanger.
 =cut
 
 use constant {
-    OK => { status => 200, code => 200000000, message => 'OK' },
+    OK => { status => 200, code => 200000000, exit => 0, message => 'OK' },
     PARAMETER_ERROR => {
-        status => 400, code => 400000000, message => 'Parameter error'
-    },
-    DB_ERROR => {
-        status => 500, code => 500000000, message => 'Database error'
-    },
-    DB_CONNECTION_ERROR => {
-        status => 500, code => 500000001,
+        status => 400, code => 400000000, exit => 64,
+        message => 'Parameter error'
+    }, DB_ERROR => {
+        status => 500, code => 500000000, exit => 69,
+        message => 'Database error'
+    }, DB_CONNECTION_ERROR => {
+        status => 500, code => 500000001, exit => 69,
         message => 'Database connection error'
-    },
-    NOT_IMPLEMENTED_YET => {
-        status => 500, code => 500999999, message => 'Not implemented yet'
+    }, NOT_IMPLEMENTED_YET => {
+        status => 500, code => 500999999, exit => 70,
+        message => 'Not implemented yet'
     }
 };
 
@@ -97,7 +97,7 @@ sub _ng($$) {
     my $r = $result;
     $self->{log}->error($r->{status}, $r->{code}, $r->{message});
     $self->_respond($result);
-    return undef;
+    exit($r->{exit});
 }
 
 
@@ -146,7 +146,8 @@ sub ok($) {
     my $result = OK;
     my $r = $result;
     $self->{log}->info($r->{status}, $r->{code}, $r->{message});
-    return $self->_respond($r);
+    $self->_respond($r);
+    exit(0);
 }
 
 1;

@@ -1,24 +1,73 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>テスト</title>
+    <title>Test</title>
   </head>
   <body>
-    <h1>テスト</h1>
+    <h1>Test</h1>
     <ol>
-      <li><a href="./cgi-bin/change.cgi">無し</a></li>
+      <li><a href="./cgi-bin/change.cgi">Nothing</a></li>
       <li>
         <a href="./cgi-bin/change.cgi?id=1&subject=subject&reporter=reporter&address=address&status=status&description=description">
-          値1
+          values 1
         </a>
       </li>
       <li>
         <a href="./cgi-bin/change.cgi?id=1&subject=subject1b&reporter=reporter1b&address=address1b&status=status1b&description=description1b">
-          値2
+          values 2
         </a>
       </li>
     </ol>
+    <form action="./cgi-bin/change.cgi">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">parameter</th>
+            <th scope="col">value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row"><label for="id" type="number">id</label></th>
+            <td><input name="id" id="id"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="subject">subject</label></th>
+            <td><input name="subject" id="subject"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="reporter">reporter</label></th>
+            <td><input name="reporter" id="reporter"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="address">address</label></th>
+            <td><input name="address" id="address"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="status">status</label></th>
+            <td><input name="status" id="status"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="description">description</label></th>
+            <td><textarea name="description" id="description"></textarea></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="creator">creator</label></th>
+            <td><input name="creator" id="creator"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="updater">updater</label></th>
+            <td><input name="updater" id="updater"></td>
+          </tr>
+          <tr>
+            <td>
+              <button type="submit">submit</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </form>
   </body>
 </html>

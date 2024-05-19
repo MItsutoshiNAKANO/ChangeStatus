@@ -12,7 +12,7 @@ use StatusChanger;
 $ENV{PGDATABASE} ||= 'vagrant';
 $ENV{PGPASSWORD} ||= 'vagrant';
 
-my $log = Mojo::Log->new(path => '../logs/change.log', level => 'info')
+my $log = Mojo::Log->new(path => '../logs/change.log', level => 'debug')
 or die 'Could not create log file';
 my $changer = StatusChanger->new;
 $changer->prepare({ log => $log }) and $changer->change;
