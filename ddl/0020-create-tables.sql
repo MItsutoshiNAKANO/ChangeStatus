@@ -1,5 +1,3 @@
-CREATE ROLE apache PASSWORD 'vagrant' LOGIN;
-
 CREATE TABLE tickets (
     id INTEGER,
     subject VARCHAR(997) NOT NULL,
@@ -21,7 +19,8 @@ CREATE TABLE tickets (
     updater VARCHAR(126) NOT NULL,
     create_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)    
+    PRIMARY KEY (id)
 );
 
+CREATE ROLE apache PASSWORD 'vagrant' LOGIN;
 GRANT SELECT, INSERT, UPDATE ON tickets TO apache;
