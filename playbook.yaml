@@ -2,6 +2,10 @@
   hosts: localhost
   become: yes
   tasks:
+    - name: Upgrade all packages to the latest version
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
     - name: Enable CRB
       ansible.builtin.command:
         cmd: dnf config-manager --set-enabled crb
@@ -13,14 +17,14 @@
       ansible.builtin.dnf:
         name: "*"
         state: latest
+    - name: Use PostgreSQL 16
+      ansible.builtin.command:
+        cmd: dnf -y module install postgresql:16
     - name: Install packages
       ansible.builtin.dnf:
         name:
-          - postgresql-server
-          - postgresql
           - perl-DBD-Pg
           - httpd
-          - cmake
           - perl
           - perl-Archive-Tar
           - perl-Archive-Zip
@@ -33,6 +37,7 @@
           - perl-Digest-SHA
           - perl-Encode
           - perl-File-stat
+          - perl-Getopt-Std
           - perl-IO
           - perl-JSON-PP
           - perl-Module-Metadata
@@ -85,7 +90,6 @@
           - perl-File-Path
           - perl-File-Temp
           - perl-File-pushd
-          - perl-Getopt-Long
           - perl-I18N-LangTags
           - perl-I18N-Langinfo
           - perl-IPC-Open3
@@ -121,12 +125,6 @@
           - perl-Mojolicious
           - perl-Log-Log4perl
         state: latest
-    - name: Install Perl modules from CPAN
-      ansible.builtin.shell:
-        cmd:
-          echo yes | cpan -T
-          CGI::Application CGI::Application::Plugin::Authentication
-          CGI::Application::Plugin::Session CGI::Session TOML::Tiny
     - name: Stop PostgreSQL Server
       ansible.builtin.systemd:
         name: postgresql
